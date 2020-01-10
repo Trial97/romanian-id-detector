@@ -6,8 +6,9 @@ import sys
 # Import utilites
 import imutils
 from imutils import paths
-from utils import label_map_util
-from utils import visualization_utils as vis_util
+from id_card_detector.utils import label_map_util
+from id_card_detector.utils import visualization_utils as vis_util
+import detect_mrz 
 from scipy.spatial import distance as dist
 
 import matplotlib
@@ -15,10 +16,6 @@ matplotlib.use('TkAgg')
 from matplotlib import pyplot as plt
 
 def plotThis(img):
-    # global i
-    # cv2.imshow(str(i),img)
-    # i+=1
-    # return      
     plt.axis("off")
     plt.imshow(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
     plt.show()    
@@ -125,9 +122,9 @@ class IDector:
         self.cwd_path = os.getcwd()
         # Path to frozen detection graph .pb file, which contains the model that is used
         # for object detection.
-        self.path_to_ckpt = os.path.join(self.cwd_path, self.model_name, 'frozen_inference_graph.pb')
+        self.path_to_ckpt = os.path.join(self.cwd_path, 'id_card_detector', self.model_name, 'frozen_inference_graph.pb')
         # Path to label map file
-        self.path_to_labels = os.path.join(self.cwd_path,'data','labelmap.pbtxt')
+        self.path_to_labels = os.path.join(self.cwd_path,'id_card_detector', 'data','labelmap.pbtxt')
         # Number of classes the object detector can identify
         self.num_classes = 1
         self.load_label_map()
@@ -311,94 +308,11 @@ class IDector:
         print("No face")
         return buletin
 
-
-rectKernel = cv2.getStructuringElement(cv2.MORPH_RECT, (13, 5))
-sqKernel = cv2.getStructuringElement(cv2.MORPH_RECT, (21, 21))
-def detectROI(image):
-    image = imutils.resize(image, height=600)
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    dilated_img = cv2.dilate(image[:,:,1], np.ones((7, 7), np.uint8))
-    bg_img = cv2.medianBlur(dilated_img, 21)
-    
-    #--- finding absolute difference to preserve edges ---
-    diff_img = 255 - cv2.absdiff(image[:,:,1], bg_img)
-    
-    #--- normalizing between 0 to 255 ---
-    norm_img = cv2.normalize(diff_img, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_8UC1)
-    
-    gray = cv2.threshold(norm_img, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)[1]
-    # smooth the image using a 3x3 Gaussian, then apply the blackhat
-    # morphological operator to find dark regions on a light background
-    # gray = cv2.GaussianBlur(gray, (3, 3), 0)
-    blackhat = cv2.morphologyEx(gray, cv2.MORPH_BLACKHAT, rectKernel)
-
-    # compute the Scharr gradient of the blackhat image and scale the
-    # result into the range [0, 255]
-    gradX = cv2.Sobel(blackhat, ddepth=cv2.CV_32F, dx=1, dy=0, ksize=-1)
-    gradX = np.absolute(gradX)
-    (minVal, maxVal) = (np.min(gradX), np.max(gradX))
-    gradX = (255 * ((gradX - minVal) / (maxVal - minVal))).astype("uint8")
-
-    # apply a closing operation using the rectangular kernel to close
-    # gaps in between letters -- then apply Otsu's thresholding method
-    gradX = cv2.morphologyEx(gradX, cv2.MORPH_CLOSE, rectKernel)
-    thresh = cv2.threshold(gradX, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)[1]
-
-    # perform another closing operation, this time using the square
-    # kernel to close gaps between lines of the MRZ, then perform a
-    # serieso of erosions to break apart connected components
-    thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, sqKernel)
-    thresh = cv2.erode(thresh, None, iterations=4)
-
-    # during thresholding, it's possible that border pixels were
-    # included in the thresholding, so let's set 5% of the left and
-    # right borders to zero
-    p = int(image.shape[1] * 0.05)
-    thresh[:, 0:p] = 0
-    thresh[:, image.shape[1] - p:] = 0
-
-    # find contours in the thresholded image and sort them by their
-    # size
-    cnts = cv2.findContours(thresh.copy(), cv2.RETR_EXTERNAL,
-        cv2.CHAIN_APPROX_SIMPLE)
-    cnts = imutils.grab_contours(cnts)
-    cnts = sorted(cnts, key=cv2.contourArea, reverse=True)
-
-    roi=None
-    # loop over the contours
-    for c in cnts:
-        # compute the bounding box of the contour and use the contour to
-        # compute the aspect ratio and coverage ratio of the bounding box
-        # width to the width of the image
-        (x, y, w, h) = cv2.boundingRect(c)
-        ar = w / float(h)
-        crWidth = w / float(gray.shape[1])
-
-        # check to see if the aspect ratio and coverage width are within
-        # acceptable criteria
-        if ar > 5 and crWidth > 0.75:
-            # pad the bounding box since we applied erosions and now need
-            # to re-grow it
-            pX = int((x + w) * 0.03)
-            pY = int((y + h) * 0.03)
-            (x, y) = (x - pX, y - pY)
-            (w, h) = (w + (pX * 2), h + (pY * 2))
-
-            # extract the ROI from the image and draw a bounding box
-            # surrounding the MRZ
-            roi = image[y:y + h, x:x + w].copy()
-            cv2.rectangle(image, (x, y), (x + w, y + h), (0, 255, 0), 2)
-            break
-    return roi
-
-
-
-
 id = IDector()
 for p in paths.list_images("./test_images/"):
     b = id.get_buletin(p)
     plotThis(b)
-    roi=detectROI(b)
+    roi=detect_mrz.detectROI(b)
     if roi is None:
         print("No MZR detected")
         continue
