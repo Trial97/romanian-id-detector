@@ -217,7 +217,7 @@ class IDector:
         buletin_grey= cv2.cvtColor(buletin,cv2.COLOR_BGR2GRAY)
         kernel = np.ones((5,5),np.float32)/25
         gray = cv2.filter2D(buletin_grey,-1,kernel)
-        # gray = cv2.blur(gray,(3,3))  
+        # gray = cv2.blur(gray,(8,8))  
         edges = cv2.Canny(gray,600,700,apertureSize = 5)
         dilatation_size = 4
         element = cv2.getStructuringElement(cv2.MORPH_RECT, (2*dilatation_size + 1, 2*dilatation_size+1), (dilatation_size, dilatation_size))
